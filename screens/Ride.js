@@ -30,8 +30,14 @@ export default class RideScreen extends Component {
       scanned: false,
       bikeType: "",
       userName: "",
-      bikeAssigned: ""
+      bikeAssigned: "",
+      email:firebase.auth().currentUser.email
     };
+  }
+
+  async componentDidMount(){
+    const {email}=this.state;
+    await this.getUserDetails(email);
   }
 
   getCameraPermissions = async () => {
@@ -59,6 +65,8 @@ export default class RideScreen extends Component {
     var { bikeId, userId } = this.state;
     await this.getBikeDetails(bikeId);
     await this.getUserDetails(userId);
+
+    var transactionType = await this.chekBikeAvailability(bikeId)
 
     db.collection("bicycles")
       .doc(bikeId)
@@ -120,9 +128,10 @@ export default class RideScreen extends Component {
       });
   };
 
-  getUserDetails = userId => {
+  
+  getUserDetails = email => {
     db.collection("users")
-      .where("id", "==", userId)
+      .where("email_id", "==", email)
       .get()
       .then(snapshot => {
         snapshot.docs.map(doc => {
@@ -135,6 +144,88 @@ export default class RideScreen extends Component {
       });
   };
 
+  chekBikeAvailability = async bikeId =>{
+    const bikeRef = await db
+    .collection("bicycles")
+    .where("id","==",bikeId)
+    .get();
+
+    var transactionType = ""
+
+    if (bikeRef.docs. length==0){
+      transactionType = false
+    }
+
+    else {
+      bikeRef.docs.map(doc =>{
+        if (!doc.data().under_maintenance){
+          transactionType = doc.data().is_bike_available ?"alugar":"retornar";
+        }
+
+        else {
+          transactionType = "under_maintenance";
+          Alert.alert(doc.data().maintenence_message)
+        }
+      })
+    }
+
+    return transactionType
+  }
+
+  checkUserEligibilityForStartRide = async (userId, email) => {
+    const userRef = await db 
+    .collection("users") 
+    .where("id", "==", userId) 
+    .where("email_id", "==", email) 
+    .get();
+
+    var isUserEligible = false; 
+
+    if (userRef.docs.length == 0) {
+     this.setState({ bikeId: "" }); 
+     isUserEligible = false;
+     Alert.alert("Id de Usuário inválido"); 
+    } else { 
+      userRef.docs.map(doc => { 
+      if (!doc.data().bike_assigned) {
+        isUserEligible = true; 
+      } else { 
+        isUserEligible = false; 
+        Alert.alert("Finalize o passeio atual para alugar outra bicicleta"); 
+        this.setState({ bikeId: "" }); 
+      } 
+    }); 
+  } 
+
+  
+  return isUserEligible; 
+  };
+
+
+  checkUserEligibilityForEndRide = async (bikeId, userId, email) => { 
+  const transactionRef = await db 
+  .collection("transactions") 
+  .where("bike_id", "==", bikeId) 
+  .where("email_id", "==", email) 
+  .limit(1) 
+  .get(); 
+  var isUserEligible = ""; 
+  transactionRef.docs.map(doc => { 
+    var lastBikeTransaction = doc.data(); 
+    if (lastBikeTransaction.user_id === userId) { 
+      isUserEligible = true; 
+    }
+
+    else { 
+      isUserEligible = false; 
+      Alert.alert("Essa bicicleta está alugada por outro usuário"); 
+      this.setState({ bikeId: "" }); 
+    }
+   });
+
+   return isUserEligible; 
+  };
+
   assignBike = async (bikeId, userId, bikeType, userName) => {
     // adicionar uma transação
     db.collection("transactions").add({
@@ -143,7 +234,8 @@ export default class RideScreen extends Component {
       bike_id: bikeId,
       bike_type: bikeType,
       date: firebase.firestore.Timestamp.now().toDate(),
-      transaction_type: "rented"
+      transaction_type: "rented",
+      email_id:email
     });
     // mudar o status da bicicleta
     db.collection("bicycles")
@@ -172,7 +264,8 @@ export default class RideScreen extends Component {
       bike_id: bikeId,
       bike_type: bikeType,
       date: firebase.firestore.Timestamp.now().toDate(),
-      transaction_type: "return"
+      transaction_type: "return",
+      email_id:email
     });
     // mudar o status da bicicleta
     db.collection("bicycles")
